@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>台灣街頭：第一版</title>
+<style>
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#111;font-family:-apple-system,BlinkMacSystemFont,"Noto Sans TC",sans-serif;touch-action:none}
+canvas{display:block;width:100%;height:100%;background:#79a95c}
+#hud{position:fixed;left:12px;top:10px;color:#fff;text-shadow:0 2px 4px #000;font-weight:700;z-index:5;font-size:14px;line-height:1.5}
+#mission{position:fixed;left:50%;top:12px;transform:translateX(-50%);background:#111b;color:#fff;padding:8px 12px;border-radius:12px;border:1px solid #ffffff33;z-index:5;text-align:center;min-width:230px}
+#help{position:fixed;right:12px;top:10px;color:#fff;background:#1119;padding:7px 10px;border-radius:10px;z-index:5;font-size:12px}
+#controls{position:fixed;inset:0;pointer-events:none;z-index:10}
+.btn{position:absolute;width:62px;height:62px;border-radius:50%;background:#ffffff30;border:2px solid #ffffff66;color:#fff;font-size:25px;font-weight:800;display:flex;align-items:center;justify-content:center;pointer-events:auto;user-select:none;-webkit-user-select:none}
+#up{left:88px;bottom:132px}#left{left:22px;bottom:67px}#down{left:88px;bottom:67px}#right{left:154px;bottom:67px}
+#gas{right:22px;bottom:132px;background:#1d8f4d99}#brake{right:94px;bottom:58px;background:#9c2c2c99}
+#action{right:22px;bottom:58px;background:#2465b899}
+#start{position:fixed;inset:0;background:linear-gradient(#182018,#263b26);z-index:20;color:#fff;display:flex;align-items:center;justify-content:center;text-align:center;padding:24px}
+.card{max-width:420px;background:#111d;padding:28px;border:1px solid #ffffff25;border-radius:22px;box-shadow:0 20px 70px #0008}
+.card h1{margin:0 0 8px;font-size:30px}.card p{color:#ddd;line-height:1.7}
+#play{border:0;border-radius:14px;padding:14px 26px;background:#f0c330;color:#111;font-weight:900;font-size:17px}
+#toast{position:fixed;left:50%;bottom:28%;transform:translateX(-50%);color:#fff;background:#000c;padding:10px 15px;border-radius:12px;opacity:0;transition:.2s;z-index:30;pointer-events:none}
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<div id="hud">💰 $<span id="money">0</span><br>⭐ 通緝 <span id="wanted">0</span></div>
+<div id="mission">任務：前往黃色標記 📍</div>
+<div id="help">雙指/方向鍵：移動　藍鍵：互動</div>
+<div id="controls">
+  <div class="btn" id="up">▲</div><div class="btn" id="left">◀</div><div class="btn" id="down">▼</div><div class="btn" id="right">▶</div>
+  <div class="btn" id="gas">⚡</div><div class="btn" id="brake">■</div><div class="btn" id="action">↕</div>
+</div>
+<div id="toast"></div>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<div id="start">
+  <div class="card">
+    <h1>🇹🇼 台灣街頭</h1>
+    <h2>第一版・手機開放世界</h2>
+    <p>自己做的台灣街頭 GTA 風格原型。<br>你可以在彰化風格街區自由移動、騎機車、接任務、賺錢。</p>
+    <button id="play">🎮 進入遊戲</button><p style="font-size:12px;color:#aaa;margin-top:14px">若是從「檔案」App 開啟，請點右上角分享 →「在 Safari 中開啟」。</p>
+  </div>
+</div>
+<script>
+const c=document.getElementById('game'),ctx=c.getContext('2d');
+let W,H,DPR, running=false, money=0, wanted=0, vehicle=false, missionDone=false;
+const keys={up:false,down:false,left:false,right:false,gas:false,brake:false,action:false};
+const player={x:900,y:900,a:-Math.PI/2,speed:2.4};
+const buildings=[
+{x:80,y:80,w:250,h:180,t:'透天厝'},{x:420,y:70,w:190,h:190,t:'便利商店'},
+{x:720,y:80,w:280,h:170,t:'住宅'},{x:1110,y:80,w:210,h:230,t:'宮廟'},
+{x:70,y:440,w:230,h:200,t:'住宅'},{x:420,y:420,w:260,h:180,t:'早餐店'},
+{x:830,y:410,w:210,h:230,t:'透天厝'},{x:1130,y:430,w:210,h:190,t:'車行'},
+{x:90,y:800,w:240,h:190,t:'住宅'},{x:430,y:790,w:220,h:210,t:'住宅'},
+{x:760,y:790,w:300,h:180,t:'工廠'},{x:1140,y:780,w:190,h:210,t:'住宅'}
+];
+const cars=[
+{x:370,y:340,a:0,col:'#d33'},{x:700,y:340,a:Math.PI/2,col:'#eee'},
+{x:1080,y:350,a:0,col:'#2476d2'},{x:360,y:700,a:0,col:'#f0c21b'},
+{x:1080,y:700,a:Math.PI/2,col:'#222'}
+];
+const npc=[
+{x:350,y:250,a:1.2},{x:700,y:260,a:2.5},{x:1080,y:620,a:0.5},{x:700,y:720,a:2.8},{x:350,y:620,a:1.7}
+];
+const mission={x:1160,y:350};
+function resize(){DPR=Math.min(devicePixelRatio||1,2);W=innerWidth;H=innerHeight;c.width=W*DPR;c.height=H*DPR;c.style.width=W+'px';c.style.height=H+'px';ctx.setTransform(DPR,0,0,DPR,0,0)}
+addEventListener('resize',resize);resize();
+function bind(id,k){let e=document.getElementById(id);e.addEventListener('pointerdown',ev=>{ev.preventDefault();keys[k]=true});['pointerup','pointercancel','pointerleave'].forEach(x=>e.addEventListener(x,ev=>{ev.preventDefault();keys[k]=false}))}
+bind('up','up');bind('down','down');bind('left','left');bind('right','right');bind('gas','gas');bind('brake','brake');bind('action','action');
+addEventListener('keydown',e=>{if(['ArrowUp','w','W'].includes(e.key))keys.up=true;if(['ArrowDown','s','S'].includes(e.key))keys.down=true;if(['ArrowLeft','a','A'].includes(e.key))keys.left=true;if(['ArrowRight','d','D'].includes(e.key))keys.right=true;if(e.key===' ')keys.action=true});
+addEventListener('keyup',e=>{if(['ArrowUp','w','W'].includes(e.key))keys.up=false;if(['ArrowDown','s','S'].includes(e.key))keys.down=false;if(['ArrowLeft','a','A'].includes(e.key))keys.left=false;if(['ArrowRight','d','D'].includes(e.key))keys.right=false;if(e.key===' ')keys.action=false});
+document.getElementById('play').onclick=()=>{document.getElementById('start').style.display='none';running=true;loop()};
+function toast(s){let t=document.getElementById('toast');t.textContent=s;t.style.opacity=1;clearTimeout(toast.t);toast.t=setTimeout(()=>t.style.opacity=0,1800)}
+function dist(a,b){return Math.hypot(a.x-b.x,a.y-b.y)}
+function rectHit(x,y,r){return buildings.some(b=>x> b.x-r && x<b.x+b.w+r && y>b.y-r && y<b.y+b.h+r)}
+function update(){
+  let turn=(keys.right?1:0)-(keys.left?1:0), f=(keys.up||keys.gas?1:0)-(keys.down||keys.brake?1:0);
+  let sp=(vehicle?4.6:2.4)*f;
+  player.a+=turn*(vehicle?.055:.075)*(f===0?0.7:1);
+  let nx=player.x+Math.cos(player.a)*sp, ny=player.y+Math.sin(player.a)*sp;
+  if(!rectHit(nx,player.y,vehicle?18:11))player.x=nx;
+  if(!rectHit(player.x,ny,vehicle?18:11))player.y=ny;
+  player.x=Math.max(25,Math.min(1410,player.x));player.y=Math.max(25,Math.min(1040,player.y));
+  if(keys.action){
+    keys.action=false;
+    let near= cars.findIndex(q=>Math.hypot(q.x-player.x,q.y-player.y)<55);
+    if(near>=0){vehicle=!vehicle;toast(vehicle?'🛵 上車了！按方向鍵駕駛':'下車了！')}
+    else if(Math.hypot(mission.x-player.x,mission.y-player.y)<70 && !missionDone){missionDone=true;money+=500;document.getElementById('mission').textContent='任務完成！ +$500　下一個任務即將出現';toast('任務完成！ +$500');setTimeout(()=>{mission.x=180;mission.y=720;missionDone=false;document.getElementById('mission').textContent='任務：前往新的黃色標記 📍'},1400)}
+    else {wanted=Math.min(5,wanted+1);toast('⚠️ 你在街上製造了騷動！')}
+  }
+  document.getElementById('money').textContent=money;document.getElementById('wanted').textContent=wanted;
+}
+function worldToScreen(x,y,camx,camy){return [x-camx+W/2,y-camy+H/2]}
+function draw(){
+  ctx.clearRect(0,0,W,H);
+  let camx=player.x,camy=player.y;
+  // ground
+  ctx.fillStyle='#78a75d';ctx.fillRect(0,0,W,H);
+  // grid streets
+  for(let x=-1000;x<2500;x+=350){let p=worldToScreen(x,0,camx,camy);ctx.fillStyle='#454545';ctx.fillRect(p[0]-48,0,96,H);ctx.fillStyle='#d7c86a';for(let y=0;y<H;y+=38)ctx.fillRect(p[0]-2,y,4,20)}
+  for(let y=-1000;y<2200;y+=350){let p=worldToScreen(0,y,camx,camy);ctx.fillStyle='#454545';ctx.fillRect(0,p[1]-48,W,96);ctx.fillStyle='#d7c86a';for(let x=0;x<W;x+=38)ctx.fillRect(x,p[1]-2,20,4)}
+  // buildings
+  buildings.forEach(b=>{let [x,y]=worldToScreen(b.x,b.y,camx,camy);ctx.fillStyle='#d8c2a4';ctx.fillRect(x,y,b.w,b.h);ctx.strokeStyle='#754d3a';ctx.lineWidth=3;ctx.strokeRect(x,y,b.w,b.h);ctx.fillStyle='#8e5c42';ctx.fillRect(x,y,b.w,24);ctx.fillStyle='#222';ctx.font='13px sans-serif';ctx.fillText(b.t,x+8,y+45);for(let wx=x+18;wx<x+b.w-12;wx+=45){ctx.fillStyle='#9dd2dd';ctx.fillRect(wx,y+68,24,28)}});
+  // NPC
+  npc.forEach(n=>{let [x,y]=worldToScreen(n.x,n.y,camx,camy);ctx.fillStyle='#222';ctx.beginPath();ctx.arc(x,y-8,8,0,7);ctx.fill();ctx.fillStyle='#4b7';ctx.fillRect(x-7,y,14,20)});
+  // cars
+  cars.forEach(q=>{let [x,y]=worldToScreen(q.x,q.y,camx,camy);ctx.save();ctx.translate(x,y);ctx.rotate(q.a);ctx.fillStyle=q.col;ctx.fillRect(-24,-13,48,26);ctx.fillStyle='#8dd0dd';ctx.fillRect(-8,-10,17,20);ctx.restore()});
+  // mission marker
+  let [mx,my]=worldToScreen(mission.x,mission.y,camx,camy);ctx.strokeStyle='#ffd400';ctx.lineWidth=4;ctx.beginPath();ctx.arc(mx,my,22+Math.sin(Date.now()/160)*4,0,7);ctx.stroke();ctx.fillStyle='#ffd400';ctx.font='bold 16px sans-serif';ctx.fillText('任務',mx-18,my-30);
+  // player
+  let [px,py]=worldToScreen(player.x,player.y,camx,camy);ctx.save();ctx.translate(px,py);ctx.rotate(player.a);
+  if(vehicle){ctx.fillStyle='#111';ctx.fillRect(-20,-10,40,20);ctx.fillStyle='#e33';ctx.fillRect(2,-6,14,12);ctx.fillStyle='#ddd';ctx.fillRect(-12,-5,10,10)}
+  else{ctx.fillStyle='#222';ctx.beginPath();ctx.arc(0,-11,9,0,7);ctx.fill();ctx.fillStyle='#3478db';ctx.fillRect(-9,0,18,25);ctx.fillStyle='#f4c9a5';ctx.fillRect(-18,5,9,5);ctx.fillRect(9,5,9,5)}
+  ctx.restore();
+  // minimap
+  let mw=120,mh=90,ox=W-mw-12,oy=H-mh-12;ctx.fillStyle='#111b';ctx.fillRect(ox,oy,mw,mh);ctx.strokeStyle='#fff4';ctx.strokeRect(ox,oy,mw,mh);
+  ctx.fillStyle='#79a95c';ctx.fillRect(ox+4,oy+4,mw-8,mh-8);ctx.fillStyle='#555';for(let x=15;x<mw;x+=30)ctx.fillRect(ox+x,oy,6,mh);for(let y=15;y<mh;y+=30)ctx.fillRect(ox,oy+y,mw,6);
+  ctx.fillStyle='#ffd400';ctx.beginPath();ctx.arc(ox+mission.x/12,oy+mission.y/12,4,0,7);ctx.fill();
+  ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(ox+player.x/12,oy+player.y/12,4,0,7);ctx.fill();
+}
+function loop(){if(!running)return;update();draw();requestAnimationFrame(loop)}
+</script>
+</body>
+</html>
